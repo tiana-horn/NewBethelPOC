@@ -1,0 +1,11 @@
+[
+  {
+    "designation": "UFC 4-510-01",
+    "versionId": "REPLACE-WITH-VERSION-UUID",
+    "criterionId": "OPTIONAL-CRITERION-UUID-FOR-STALENESS-CRON",
+    "link": ["09 90 00", "08 11 13"]
+  },
+  {
+    "versionId": "REPLACE-WITH-VERSION-UUID"
+  }
+]

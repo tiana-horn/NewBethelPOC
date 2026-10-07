@@ -1,0 +1,61 @@
+# Logs / runtime
+logs
+*.log
+npm-debug.log*
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage
+*.lcov
+.nyc_output
+
+# Dependencies
+node_modules/
+
+# TypeScript / build caches
+*.tsbuildinfo
+dist
+.output
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Cloudflare Wrangler local state + generated types
+.wrangler/
+worker-configuration.d.ts
+
+# Local dev vars (secrets/overrides) — keep the example, ignore the real file
+.dev.vars
+!.dev.vars.example
+.dev*
+
+# OS
+.DS_Store
+
+# Large / licensed source corpus (NOT tracked, NOT deployed as Worker assets).
+# Corpus reaches production via D1 seed + R2 ingestion (POST /admin/corpus/*,
+# /api/seed-r2), not the git repo. The small spec .md files in documents/ ARE
+# tracked (whitelisted below).
+documents/*.pdf
+documents/*.ifc
+documents/*.xlsx
+documents/UFGS_M/
+documents/IFC4_3/
+documents/wmaster.dft
+documents/specsintactSEC.xsd
+!documents/*.md
+
+# Generated seeds ignored by CONTENTS so the one exception below re-includes.
+db/generated/*
+# ...except the SEC catalog seed: small (~170 KB), CD reseeds it every deploy,
+# so CI needs it in the checkout. Larger illustrative seeds stay ignored.
+!db/generated/seed-sec-catalog.sql
+
+# Out-of-band WBDG CIM version/criterion UUIDs for UFC ingest. Real IDs stay out
+# of git; the .example is the committed template.
+scripts/ufc-uuids.json

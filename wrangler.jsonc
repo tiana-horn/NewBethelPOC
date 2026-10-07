@@ -1,0 +1,130 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  // NOTE: `name` must match the EXISTING prod Worker to adopt its routes/OAuth
+  // config. A real `wrangler deploy` from this repo therefore REPLACES the
+  // running prod Worker — do not deploy until that is intended (see the rebuild
+  // plan). Local `wrangler dev` / `--dry-run` never touch prod.
+  "name": "spec-writer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Static SPA. The Worker owns the API prefixes; everything else is ./public.
+  // `run_worker_first` is REQUIRED with single-page-application handling, else
+  // the Assets router shadows the Worker for navigation/HTML requests —
+  // including `<a download>` artifact clicks — and returns index.html instead
+  // of streaming the artifact.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/session/*",
+      "/api/*",
+      "/project",
+      "/project/*",
+      "/projects",
+      "/projects/*",
+      "/masters",
+      "/masters/*",
+      "/manuals",
+      "/manuals/*",
+      "/admin/*",
+      "/auth/*"
+    ]
+  },
+
+  // ---- Bindings (reuse EXISTING Cloudflare resources from the prior deploy) ----
+
+  // LLM inference — all calls routed through AI Gateway in src/shared/ai.ts.
+  "ai": { "binding": "AI" },
+
+  // Authoritative-lookup store (UMRL/UMSL/criteria/product library/traceability).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "spec_writer",
+      // Existing database from the prior deploy. Local dev ignores this and uses
+      // .wrangler/state, so it is fine for `wrangler dev` / `--local`.
+      "database_id": "8fd5734c-fbb8-4f3e-b323-adcda519f573"
+    }
+  ],
+
+  // Corpus files + generated artifacts (DOCX / SpecsIntact XML / CSV).
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "spec-writer-artifacts" }],
+
+  // Profiles + pinned model config + auth sessions.
+  "kv_namespaces": [
+    { "binding": "KV", "id": "80a764f08c454edc892271a3846cf98b" }
+  ],
+
+  // Section-retrieval recall (OPTIONAL — everything degrades to lexical-only
+  // when unavailable; selection never REQUIRES it). Namespace `ufgs` holds one
+  // vector per SEC section (title + PART 1 scope), written at ufgs-bulk ingest.
+  "vectorize": [
+    { "binding": "VECTORIZE", "index_name": "spec-writer" /*, "remote": true */ }
+  ],
+
+  // ONE pipeline (clean rebuild): ManualWorkflow over child section runs, with a
+  // single live-state DO (ManualDO). A single-section run is a one-section
+  // manual — there is no separate SpecWorkflow/SessionDO. RENDER is the
+  // LibreOffice container, invoked ONLY at freeze (seal-grade PDF).
+  "durable_objects": {
+    "bindings": [
+      { "name": "MANUAL", "class_name": "ManualDO" },
+      { "name": "RENDER", "class_name": "RenderContainer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ManualDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["RenderContainer"] }
+  ],
+
+  // Render container image — a Cloudflare Registry reference pinned by digest, so
+  // `wrangler deploy` needs no Docker. basic = 1 GiB / 4 GB disk (LibreOffice
+  // headless). Reuses the existing prod image. max_instances low to cap cost;
+  // the container only runs at freeze, so a manual never frozen never spins one.
+  "containers": [
+    {
+      "class_name": "RenderContainer",
+      "image": "registry.cloudflare.com/abf066dfeb5c9e5b16ca1be636e61182/spec-writer-rendercontainer@sha256:429d37620b4eba869235c75692c9b3569f7aa50657cb1319a38df0236aea7fbf",
+      "max_instances": 3,
+      "instance_type": "basic"
+    }
+  ],
+
+  // Durable pipeline execution — the Workflow with waitForEvent HITL gates.
+  "workflows": [
+    {
+      "binding": "MANUAL_WORKFLOW",
+      "name": "spec-writer-manual",
+      "class_name": "ManualWorkflow"
+    }
+  ],
+
+  "vars": {
+    // Deployed default: real Workers AI inference via AI Gateway. Local
+    // `wrangler dev` overrides this to "false" via .dev.vars (gitignored) so the
+    // offline demo stays deterministic. USE_AI=false is also a valid, fully
+    // functional zero-inference production mode.
+    "USE_AI": "true",
+    "AI_GATEWAY_ID": "spec-writer",
+
+    // Non-sensitive config. Sensitive credentials (GOOGLE_CLIENT_ID,
+    // GOOGLE_CLIENT_SECRET, RESEND_API_KEY, and the admin-route shared secret)
+    // are Cloudflare secrets — never baked into vars. GOOGLE_REDIRECT_URI
+    // defaults to url.origin/auth/google/callback when blank.
+    "GOOGLE_REDIRECT_URI": "https://spec-writer.favored-digital01.workers.dev/auth/google/callback",
+    "MAIL_FROM": "SpecPilot <specpilot@favored.digital>",
+    "APP_URL": "https://spec-writer.favored-digital01.workers.dev/"
+  },
+
+  // Quarterly corpus staleness sweep. UFGS/UFC publish on a Feb/May/Aug/Nov
+  // cadence; fire 08:00 UTC on the 1st of those months. scheduled() walks
+  // corpus_source and FLAGS newer editions for human re-verification — it never
+  // auto-adopts (G11).
+  "triggers": { "crons": ["0 8 1 2,5,8,11 *"] },
+
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "spec-writer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI construction-specifications writer for UFGS (U.S. DoD) Project Manuals — Cloudflare. Clean rebuild per REBUILD-BLUEPRINT.md.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types",
+    "test": "vitest run",
+    "db:schema": "wrangler d1 execute spec_writer --local --file db/schema.sql",
+    "db:schema:reset": "wrangler d1 execute spec_writer --local --file db/schema-reset.sql",
+    "db:seed": "wrangler d1 execute spec_writer --local --file db/seed.sql",
+    "db:seed:roles": "wrangler d1 execute spec_writer --local --file db/seed-roles.sql",
+    "db:seed:div01": "wrangler d1 execute spec_writer --local --file db/seed-div01.sql",
+    "db:seed:real": "wrangler d1 execute spec_writer --local --file db/generated/seed-umrl-umsl.sql",
+    "db:seed:sec-catalog": "wrangler d1 execute spec_writer --local --file db/generated/seed-sec-catalog.sql",
+    "db:reset": "npm run db:schema:reset && npm run db:schema && npm run db:seed && npm run db:seed:roles && npm run db:seed:div01 && npm run db:seed:sec-catalog",
+    "etl:sec-catalog": "node scripts/etl-sec-catalog.ts",
+    "etl:ufgs-corpus": "node scripts/etl-ufgs-corpus.ts",
+    "etl:ufgs": "node scripts/etl-ufgs.ts",
+    "etl:ufc-criteria": "node scripts/etl-ufc-criteria.ts"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "@types/node": "^22.20.5",
+    "fast-xml-parser": "^5.11.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.110.0"
+  }
+}
