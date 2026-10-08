@@ -45,6 +45,7 @@ export interface TestDb {
   db: D1Database;
   raw: DatabaseSync;
   env: Env;
+  putR2: (key: string, value: string) => void;
 }
 
 export function makeTestDb(): TestDb {
@@ -65,6 +66,29 @@ export function makeTestDb(): TestDb {
       }
     },
   };
-  const env = { DB: d1, USE_AI: 'false', AI_GATEWAY_ID: 'test' } as unknown as Env;
-  return { db: d1 as D1Database, raw, env };
+  // Minimal in-memory KV (buildModeContext self-seeds profiles through it).
+  const kvStore = new Map<string, string>();
+  const kv = {
+    async get(k: string) { return kvStore.get(k) ?? null; },
+    async put(k: string, v: string) { kvStore.set(k, v); },
+    async delete(k: string) { kvStore.delete(k); },
+  };
+  // R2 that holds nothing by default (the drafter's un-ingested path returns an
+  // honestly-empty IR). Tests can put objects via `putR2`.
+  const r2Store = new Map<string, string>();
+  const r2 = {
+    async get(k: string) {
+      const v = r2Store.get(k);
+      return v === undefined ? null : { text: async () => v };
+    },
+    async put(k: string, v: string) { r2Store.set(k, v); },
+  };
+  const env = {
+    DB: d1,
+    KV: kv,
+    R2: r2,
+    USE_AI: 'false',
+    AI_GATEWAY_ID: 'test',
+  } as unknown as Env;
+  return { db: d1 as D1Database, raw, env, putR2: (k: string, v: string) => r2Store.set(k, v) };
 }
