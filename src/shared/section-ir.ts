@@ -7,7 +7,7 @@
 // unresolved form ([opt | opt] / [_____]).
 
 import type { Article, Paragraph, Part, SectionIR, Selection } from './types';
-import { repairSeams } from './brackets';
+import { repairSeams } from './bracket-bridge';
 
 export function cloneIR(ir: SectionIR): SectionIR {
   return structuredClone(ir);
