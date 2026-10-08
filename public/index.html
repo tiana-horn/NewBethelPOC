@@ -1,8 +1,49 @@
 <!doctype html>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AI Specifications Writer</title>
-<main style="font-family: system-ui, sans-serif; max-width: 42rem; margin: 4rem auto; padding: 0 1rem;">
-  <h1>AI Specifications Writer</h1>
-  <p>UFGS Project Manual engine — scaffold. UI arrives in a later milestone.</p>
-</main>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Specifications Writer — UFGS Project Manual</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">AI Specifications Writer <span class="tag">UFGS</span></div>
+    <div id="authState" class="auth"></div>
+  </header>
+
+  <main id="app">
+    <section id="view-home" class="view">
+      <h1>Draft a coordinated, sealable UFGS Project Manual</h1>
+      <p class="lede">
+        Drafts from the real ingested UFGS master, resolves brackets against your
+        project data and UFC criteria, and assembles an approved-for-seal book —
+        never inventing a citation, a criterion, or a spec sentence.
+      </p>
+      <div class="row">
+        <button id="btnNew" class="primary">New Project Manual</button>
+        <button id="btnDemo">Try the sample (anonymous)</button>
+      </div>
+      <div id="projectList" class="card-list"></div>
+    </section>
+
+    <section id="view-project" class="view hidden">
+      <button class="link back" data-nav="home">← All manuals</button>
+      <h2 id="projTitle">Project Manual</h2>
+      <ol class="steps" id="steps">
+        <li data-step="intake">Intake</li>
+        <li data-step="gate0">Confirm data (Gate 0)</li>
+        <li data-step="outline">Confirm outline (M0)</li>
+        <li data-step="run">Run the book</li>
+        <li data-step="decide">Resolve selections</li>
+        <li data-step="coord">Triage coordination</li>
+        <li data-step="approve">Approve for seal</li>
+      </ol>
+      <div id="stepBody" class="panel"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
