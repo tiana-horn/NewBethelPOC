@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SEC number="09 90 00" title="Paints and Coatings" agency="ARMY" delivery="DBB">
+  <PART number="2" title="PRODUCTS">
+    <ART id="2.1" title="MATERIALS">
+      <PARA id="2.1.A">Provide interior coatings for gypsum board substrates.</PARA>
+      <PARA id="2.1.C">Maximum VOC content shall not exceed 50 g/L.</PARA>
+    </ART>
+  </PART>
+</SEC>
