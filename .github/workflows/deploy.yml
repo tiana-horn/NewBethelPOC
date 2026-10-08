@@ -1,0 +1,115 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; cancel superseded in-progress runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, tests & guardrail greps
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Promote the guardrail "final-check greps" into a build-breaking guard:
+      # a regression fails CI instead of relying on a reviewer remembering to grep.
+      - name: Guardrail greps (G8 / G14 / admin + dev-login gates)
+        run: |
+          set -e
+          # G8 — no signing key material in src/ (hashing via crypto.subtle.digest is fine).
+          if grep -rnE 'crypto\.subtle\.sign|privateKey|node-signpdf|pkcs8|pkcs12|\.p12|\.pfx' src/; then
+            echo "::error::G8 violation — key/signing material in src/"; exit 1; fi
+          # G14 — no licensed CSI classification-id access, no reintroduced crosswalk.
+          if grep -rnE '\.(masterFormatId|uniFormatId)|omniclass_masterformat_xwalk' src/ scripts/ db/; then
+            echo "::error::G14 violation — CSI classification id / OmniClass crosswalk referenced"; exit 1; fi
+          # The dev-login route must keep its production gate.
+          grep -q 'devLoginAllowed' src/auth.ts || { echo "::error::/auth/session lost its production gate"; exit 1; }
+          # §2.4 — the admin corpus surface must keep its authorization gate.
+          grep -q 'adminAuthorized' src/corpus/admin.ts || { echo "::error::/admin/corpus lost its auth gate"; exit 1; }
+          echo "guardrail greps OK"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx wrangler deploy --dry-run
+
+  deploy:
+    name: Deploy to Cloudflare
+    needs: verify
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://spec-writer.favored-digital01.workers.dev
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Deploy
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: npx wrangler deploy
+
+      # Push sensitive credentials as encrypted Cloudflare secrets. Only syncs a
+      # secret when its GitHub secret is non-empty, so this is safely skipped on
+      # branches/forks without secrets.
+      - name: Sync secrets to Cloudflare
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        env:
+          _GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          _GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          _RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          _ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+        run: |
+          [ -n "$_GOOGLE_CLIENT_ID" ]     && echo "$_GOOGLE_CLIENT_ID"     | npx wrangler secret put GOOGLE_CLIENT_ID
+          [ -n "$_GOOGLE_CLIENT_SECRET" ] && echo "$_GOOGLE_CLIENT_SECRET" | npx wrangler secret put GOOGLE_CLIENT_SECRET
+          [ -n "$_RESEND_API_KEY" ]       && echo "$_RESEND_API_KEY"       | npx wrangler secret put RESEND_API_KEY
+          [ -n "$_ADMIN_SECRET" ]         && echo "$_ADMIN_SECRET"         | npx wrangler secret put ADMIN_SECRET
+          true
+
+      # schema.sql is NON-destructive (CREATE IF NOT EXISTS only), so it never
+      # wipes project data. Illustrative seeding (db/seed.sql, seed-umrl-umsl)
+      # stays manual. seed once: npx wrangler d1 execute spec_writer --remote --file db/seed.sql
+      - name: Apply D1 schema (remote)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: npx wrangler d1 execute spec_writer --remote --file db/schema.sql
+
+      # Additive column migrations (idempotent via `|| true`) — cover an existing
+      # DB that pre-dates a column. schema.sql never alters an existing table.
+      - name: Migrate D1 (additive columns, remote)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          npx wrangler d1 execute spec_writer --remote --command "ALTER TABLE corpus_source ADD COLUMN criterion_id TEXT" || true
+          npx wrangler d1 execute spec_writer --remote --command "ALTER TABLE ufgs_corpus_section ADD COLUMN embedded INTEGER DEFAULT 0" || true
+          npx wrangler d1 execute spec_writer --remote --command "ALTER TABLE traceability ADD COLUMN basis TEXT" || true
+          npx wrangler d1 execute spec_writer --remote --command "ALTER TABLE traceability ADD COLUMN confidence_tier TEXT" || true
+          npx wrangler d1 execute spec_writer --remote --command "ALTER TABLE traceability ADD COLUMN justification TEXT" || true
+
+      # Required reference data — idempotent (INSERT OR REPLACE), project-data-safe,
+      # reseeded every deploy. Without the SEC catalog the outline matcher has
+      # nothing to match and falls back to the mandatory Div 01 checklist only.
+      - name: Seed SEC catalog (remote)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: npx wrangler d1 execute spec_writer --remote --file db/generated/seed-sec-catalog.sql
+      - name: Seed roles (remote)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: npx wrangler d1 execute spec_writer --remote --file db/seed-roles.sql
+      - name: Seed mandatory Div 01 checklist (remote)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' }}
+        run: npx wrangler d1 execute spec_writer --remote --file db/seed-div01.sql
