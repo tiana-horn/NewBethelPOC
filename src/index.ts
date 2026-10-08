@@ -1,49 +1,16 @@
-// SCAFFOLD (M1). Minimal Worker so bindings validate (`wrangler deploy
-// --dry-run`). The real router, pipeline, and agents arrive in later
-// milestones per REBUILD-BLUEPRINT.md §11. The class exports below back the
-// durable_objects / workflows bindings declared in wrangler.jsonc.
+// Worker entrypoint — class exports back the durable_objects / workflows /
+// containers bindings in wrangler.jsonc, and the fetch/scheduled handlers. The
+// full HTTP router is wired in M12; for now fetch serves health + the static SPA
+// and scheduled() runs the quarterly corpus staleness sweep (G11).
 
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
-import { DurableObject } from 'cloudflare:workers';
-import { Container } from '@cloudflare/containers';
+export type { Env } from './env';
+import type { Env } from './env';
+import { sweepCorpusStaleness } from './corpus/staleness-cron';
 
-export interface Env {
-  ASSETS: Fetcher;
-  AI: Ai;
-  DB: D1Database;
-  R2: R2Bucket;
-  KV: KVNamespace;
-  VECTORIZE: VectorizeIndex;
-  MANUAL: DurableObjectNamespace;
-  RENDER: DurableObjectNamespace;
-  MANUAL_WORKFLOW: Workflow;
-  USE_AI: string;
-  AI_GATEWAY_ID: string;
-  GOOGLE_REDIRECT_URI: string;
-  MAIL_FROM: string;
-  APP_URL: string;
-}
-
-/** Live manual run state + HITL gate decisions. SQLite-backed. */
-export class ManualDO extends DurableObject<Env> {
-  async fetch(_req: Request): Promise<Response> {
-    return new Response('ManualDO scaffold', { status: 501 });
-  }
-}
-
-/** LibreOffice headless render container — invoked only at freeze. */
-export class RenderContainer extends Container<Env> {
-  defaultPort = 8080;
-  sleepAfter = '2m';
-}
-
-/** The one pipeline: Outline → fan-out section runs → coordinate → aggregate
- *  → assemble → freeze, with waitForEvent HITL gates. */
-export class ManualWorkflow extends WorkflowEntrypoint<Env> {
-  async run(_event: WorkflowEvent<unknown>, _step: WorkflowStep): Promise<void> {
-    // Implemented in M9.
-  }
-}
+// The real pipeline classes (one pipeline — no SpecWorkflow/SessionDO).
+export { ManualDO } from './manual/manual-do';
+export { ManualWorkflow } from './manual/manual-workflow';
+export { RenderContainer } from './render-container';
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -51,11 +18,13 @@ export default {
     if (url.pathname === '/api/health') {
       return Response.json({ ok: true, useAi: env.USE_AI === 'true' });
     }
-    // Everything else falls through to the static SPA.
+    // Everything else falls through to the static SPA until the router lands (M12).
     return env.ASSETS.fetch(req);
   },
 
-  async scheduled(_event: ScheduledController, _env: Env): Promise<void> {
-    // Quarterly corpus staleness sweep lands in M8.
+  // Quarterly corpus staleness sweep — flags newer editions for human
+  // re-verification; never auto-adopts (G11).
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await sweepCorpusStaleness(env);
   },
 };
